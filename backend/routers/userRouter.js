@@ -3,6 +3,7 @@ import expressAsyncHandler from 'express-async-handler';
 import bcrypt from 'bcryptjs';
 import data from '../data.js';
 import User from '../models/userModel.js';
+import Product from '../models/productModel.js';
 import { generateToken, isAdmin, isAuth } from '../utils.js';
 
 const userRouter = express.Router();
@@ -10,7 +11,8 @@ const userRouter = express.Router();
 userRouter.get(
   '/seed',
   expressAsyncHandler(async (req, res) => {
-    // await User.remove({});
+    await User.deleteMany({});
+    await Product.deleteMany({});
     const createdUsers = await User.insertMany(data.users);
     res.send({ createdUsers });
   })
