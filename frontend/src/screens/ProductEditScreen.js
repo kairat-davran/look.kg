@@ -68,10 +68,13 @@ export default function ProductEditScreen(props) {
     const file = e.target.files[0];
     const bodyFormData = new FormData();
     bodyFormData.append('image', file);
+    for (let pair of bodyFormData.entries()) {
+      console.log(`${pair[0]}: ${pair[1]}`);
+    }
     setLoadingUpload(true);
     try {
       const { data } = 
-        Axios.post(`/api/uploads/${productId}`, bodyFormData, {
+        await Axios.post('/api/uploads', bodyFormData, {
           headers: {
             'Content-Type': 'multipart/form-data',
             Authorization: `Bearer ${userInfo.token}`
@@ -135,6 +138,7 @@ export default function ProductEditScreen(props) {
               <input
                 type="file"
                 id="imageFile"
+                name="image"
                 label="Сүрөттү тандаңыз"
                 onChange={uploadFileHandler}
               ></input>

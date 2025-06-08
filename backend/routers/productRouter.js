@@ -4,6 +4,19 @@ import data from '../data.js';
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
 import { isAuth, isSellerOrAdmin } from '../utils.js';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const s3 = new S3Client({
+  region: 'us-west-2',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 const productRouter = express.Router();
 
@@ -134,7 +147,7 @@ productRouter.put(
     if (product) {
       product.name = req.body.name;
       product.price = req.body.price;
-      product.image = `data:image/png;base64,${Buffer.from(product.notImage.data).toString('base64')}`;
+      product.image = req.body.image;
       product.category = req.body.category;
       product.brand = req.body.brand;
       product.countInStock = req.body.countInStock;
@@ -152,21 +165,41 @@ productRouter.delete(
   isAuth,
   isSellerOrAdmin,
   expressAsyncHandler(async (req, res) => {
-    const product = await Product.findById(req.params.id);
-    if (product) {
-      const user = await User.findById(product.seller);
-      const rating = 
-        ((user.seller.rating * user.seller.numReviews)
-          - product.reviews.reduce((a, c) => c.rating + a, 0)) /
-        (user.seller.numReviews - product.numReviews);
-      user.seller.rating = Number(rating) || 0;
-      user.seller.numReviews = user.seller.numReviews - product.numReviews;
-      const updatedUser = await user.save();
+    try {
+      const product = await Product.findById(req.params.id);
+      if (!product) {
+        return res.status(404).send({ message: 'Продукт табылган жок' });
+      }
 
-      const deleteProduct = await product.remove();
-      res.send({ message: 'Продукт жок болду', product: deleteProduct, seller: updatedUser });
-    } else {
-      res.status(404).send({ message: 'Продукт табылган жок' });
+      const user = await User.findById(product.seller);
+      if (user) {
+        const rating =
+          ((user.seller.rating * user.seller.numReviews)
+            - product.reviews.reduce((a, c) => c.rating + a, 0)) /
+          (user.seller.numReviews - product.numReviews);
+        user.seller.rating = Number(rating) || 0;
+        user.seller.numReviews = user.seller.numReviews - product.numReviews;
+        await user.save();
+      }
+
+      // 🧹 Delete image from S3 if it starts with https://
+      if (product.image && product.image.startsWith('https://')) {
+        try {
+          const imageUrl = new URL(product.image);
+          const Key = decodeURIComponent(imageUrl.pathname.replace(/^\/+/, ''));
+          const deleteParams = { Bucket: 'lookkg-images', Key };
+          await s3.send(new DeleteObjectCommand(deleteParams));
+          console.log('🧹 Deleted image from S3:', Key);
+        } catch (err) {
+          console.error('❌ Failed to delete image from S3:', err.message);
+        }
+      }
+
+      await Product.deleteOne({ _id: product._id });
+      res.send({ message: 'Продукт жок болду', product });
+    } catch (err) {
+      console.error('🔥 DELETE error:', err.stack);
+      res.status(500).send({ message: err.message });
     }
   })
 );
